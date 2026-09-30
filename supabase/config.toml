@@ -1,0 +1,16 @@
+project_id = "bulk-mail"
+
+# send-campaign requires a signed-in user's JWT (checked again for the admin role).
+[functions.send-campaign]
+verify_jwt = true
+
+# The following authenticate themselves (CRON_SECRET, webhook signature, or an
+# unguessable unsubscribe token), so the gateway must not demand a Supabase JWT.
+[functions.process-queue]
+verify_jwt = false
+
+[functions.esp-webhook]
+verify_jwt = false
+
+[functions.unsubscribe]
+verify_jwt = false
