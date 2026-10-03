@@ -8,12 +8,14 @@ import { isValidEmail } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { Button, Card, Field, PageHeader, Skeleton, Spinner, Tabs } from '../components/ui.jsx';
+import PasswordForm from '../components/PasswordForm.jsx';
 
 const TABS = [
   { value: 'sender', label: 'Sender & footer' },
   { value: 'sending', label: 'Sending' },
   { value: 'domain', label: 'Domain authentication' },
   { value: 'team', label: 'Team' },
+  { value: 'account', label: 'My account' },
 ];
 
 export default function Settings() {
@@ -25,7 +27,9 @@ export default function Settings() {
       <PageHeader title="Settings" description="Sender identity, compliance footer, sending limits and deliverability." />
       <Tabs label="Settings sections" value={tab} onChange={setTab} tabs={TABS} />
       <div className="tab-panel">
-        {loading ? (
+        {tab === 'account' ? (
+          <MyAccount />
+        ) : loading ? (
           <Card><Skeleton rows={6} /></Card>
         ) : tab === 'sender' ? (
           <SenderSettings settings={settings} onSaved={setSettings} />
@@ -354,5 +358,24 @@ function Team() {
         </div>
       )}
     </Card>
+  );
+}
+
+function MyAccount() {
+  const { user, profile, signOut } = useAuth();
+  const toast = useToast();
+  return (
+    <div className="stack">
+      <Card title="Your account">
+        <dl className="review-list">
+          <div><dt>Email</dt><dd>{user?.email}</dd></div>
+          <div><dt>Role</dt><dd className="capitalize">{profile?.role ?? '…'}</dd></div>
+        </dl>
+        <Button onClick={signOut}>Sign out</Button>
+      </Card>
+      <Card title="Change password">
+        <PasswordForm onDone={() => toast.success('Password updated')} />
+      </Card>
+    </div>
   );
 }

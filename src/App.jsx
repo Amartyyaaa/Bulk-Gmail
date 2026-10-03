@@ -13,6 +13,7 @@ const Contacts = lazy(() => import('./pages/Contacts.jsx'));
 const Analytics = lazy(() => import('./pages/Analytics.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Unsubscribe = lazy(() => import('./pages/Unsubscribe.jsx'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
 
 export default function App() {
@@ -35,6 +36,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/unsubscribe" element={<Unsubscribe />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route index element={<Navigate to="/campaigns" replace />} />

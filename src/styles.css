@@ -489,3 +489,4 @@ fieldset:disabled .field input, fieldset:disabled .field textarea { background: 
   .search { min-width: 0; flex: 1; }
   .mini-stats { grid-template-columns: repeat(2, 1fr); }
 }
+.capitalize { text-transform: capitalize; }
