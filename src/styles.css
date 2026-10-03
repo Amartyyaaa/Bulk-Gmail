@@ -490,3 +490,56 @@ fieldset:disabled .field input, fieldset:disabled .field textarea { background: 
   .mini-stats { grid-template-columns: repeat(2, 1fr); }
 }
 .capitalize { text-transform: capitalize; }
+
+/* ==========================================================================
+   Visual email editor
+   ========================================================================== */
+.content-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg-text button { padding: 6px 12px; font-size: 13px; font-weight: 550; }
+.field-label { font-weight: 550; font-size: 13px; }
+.ve { border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface); overflow: hidden; }
+.ve:focus-within { outline: 2px solid var(--focus); outline-offset: 0; border-color: transparent; }
+.ve-invalid { border-color: var(--bad); }
+.ve-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 6px;
+  border-bottom: 1px solid var(--border); background: var(--surface-2);
+  position: sticky; top: 0; z-index: 1;
+}
+.ve-btn {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 4px;
+  background: none; color: var(--text-2); cursor: pointer;
+}
+.ve-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.ve-btn.active { background: var(--accent-soft); color: var(--accent); }
+.ve-btn:disabled { opacity: 0.35; cursor: default; }
+.field .ve-select { width: auto; height: 30px; min-height: 30px; padding: 2px 24px 2px 8px; font-size: 13px; }
+.ve-sep { width: 1px; height: 20px; background: var(--border-strong); margin: 0 4px; }
+.ve-color { display: inline-grid; place-items: center; width: 30px; height: 30px; cursor: pointer; }
+.ve-color input { width: 20px; height: 20px; padding: 0; border: 1px solid var(--border-strong); border-radius: 4px; background: none; cursor: pointer; }
+
+/* The editing surface mimics the email (white page) in both themes. */
+.ve-content {
+  min-height: 520px; max-height: 70vh; overflow-y: auto; padding: 24px 28px; outline: none;
+  background: #ffffff; color: #1f2937; font-family: Arial, Helvetica, sans-serif; font-size: 16px; line-height: 24px;
+}
+.ve-content > * + * { margin-top: 0; }
+.ve-content p { margin: 0 0 16px; }
+.ve-content h1 { margin: 0 0 16px; font-size: 26px; line-height: 34px; color: #111827; }
+.ve-content h2 { margin: 24px 0 12px; font-size: 20px; line-height: 28px; color: #111827; }
+.ve-content h3 { margin: 20px 0 8px; font-size: 17px; line-height: 24px; color: #111827; }
+.ve-content ul, .ve-content ol { margin: 0 0 16px; padding-left: 24px; }
+.ve-content li p { margin: 0 0 6px; }
+.ve-content blockquote { margin: 0 0 16px; padding: 8px 16px; border-left: 4px solid #e5e7eb; color: #4b5563; }
+.ve-content a { color: #4f46e5; text-decoration: underline; }
+.ve-content a.mr-button {
+  display: inline-block; padding: 12px 24px; background: #4f46e5; color: #ffffff;
+  text-decoration: none; font-weight: bold; border-radius: 6px;
+}
+.ve-content img { max-width: 100%; height: auto; display: block; margin: 0 auto 16px; }
+.ve-content img.ProseMirror-selectednode { outline: 3px solid #4f46e5; }
+.ve-content hr { border: 0; border-top: 1px solid #e5e7eb; margin: 24px 0; }
+.ve-content hr.ProseMirror-selectednode { border-top-color: #4f46e5; }
+.ve-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #9ca3af;
+}
+@media (max-width: 1280px) { .ve-content { min-height: 320px; } }

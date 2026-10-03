@@ -4,11 +4,15 @@ import { ArrowLeft, CalendarClock, Monitor, Save, Send, Smartphone, TestTube2, U
 import { callFunction, supabase } from '../lib/supabase.js';
 import { useSettings, useTags } from '../lib/hooks.js';
 import { num, toLocalInput } from '../lib/format.js';
-import { SAMPLE_CONTACT, STARTER_TEMPLATE } from '../lib/templates.js';
+import { SAMPLE_CONTACT } from '../lib/templates.js';
+import {
+  STARTER_VISUAL, VISUAL_MARKER, buildVisualEmail, extractVisualBody, isVisualHtml,
+} from '../lib/emailLayout.js';
 import { MERGE_TAGS, isValidEmail, renderEmail, unknownMergeTags } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { Button, Card, Field, Modal, PageHeader, Spinner, TagInput } from '../components/ui.jsx';
+import { Button, Card, ConfirmDialog, Field, Modal, PageHeader, Spinner, TagInput } from '../components/ui.jsx';
+import VisualEditor from '../components/VisualEditor.jsx';
 
 const EMPTY = {
   name: '',
@@ -17,7 +21,7 @@ const EMPTY = {
   from_name: '',
   from_email: '',
   reply_to: '',
-  html: STARTER_TEMPLATE,
+  html: '',
   segment_tags: [],
   batch_size: 50,
   batch_delay_secs: 10,
@@ -43,8 +47,23 @@ function validate(c, { forSend = false } = {}) {
   if (!Number.isInteger(bd) || bd < 0 || bd > 3600) e.batch_delay_secs = 'Delay must be 0 to 3600 seconds.';
   const unknown = unknownMergeTags(c.html + c.subject + c.preheader);
   if (unknown.length) e.html = `Unknown merge tag${unknown.length > 1 ? 's' : ''}: ${unknown.map((t) => `{{${t}}}`).join(', ')}`;
-  else if (forSend && !c.html.trim()) e.html = 'Email content is empty.';
+  else if (forSend && isContentEmpty(c.html)) e.html = 'Email content is empty.';
   return e;
+}
+
+function isContentEmpty(html) {
+  const body = extractVisualBody(html);
+  if (body === null) return !String(html ?? '').trim();
+  return !/<img/i.test(body) && !body.replace(/<[^>]+>|&nbsp;/g, '').trim();
+}
+
+/** Best-effort conversion of hand-written HTML into visual-editor content. */
+function htmlToEditorBody(html) {
+  const s = String(html ?? '');
+  const visual = extractVisualBody(s);
+  if (visual !== null) return visual;
+  const body = s.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+  return body ? body[1] : s;
 }
 
 export default function CampaignEditor() {
@@ -57,7 +76,12 @@ export default function CampaignEditor() {
   const { tags } = useTags();
 
   const [campaign, setCampaign] = useState(isNew ? null : undefined);
-  const [form, setForm] = useState(EMPTY);
+  const [form, setForm] = useState(() => ({ ...EMPTY, html: buildVisualEmail(STARTER_VISUAL) }));
+  const [mode, setMode] = useState('visual'); // visual | html
+  const [visualBody, setVisualBody] = useState(STARTER_VISUAL);
+  const [editorKey, setEditorKey] = useState(0);
+  const [confirmVisual, setConfirmVisual] = useState(false);
+  const visualApiRef = useRef(null);
   const [touched, setTouched] = useState({});
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -92,7 +116,13 @@ export default function CampaignEditor() {
       .then(({ data, error }) => {
         if (error) toast.error(error);
         setCampaign(data ?? null);
-        if (data) setForm(Object.fromEntries(EDITABLE.map((k) => [k, data[k] ?? EMPTY[k]])));
+        if (data) {
+          setForm(Object.fromEntries(EDITABLE.map((k) => [k, data[k] ?? EMPTY[k]])));
+          const body = extractVisualBody(data.html);
+          setMode(body !== null ? 'visual' : 'html');
+          if (body !== null) setVisualBody(body);
+          setEditorKey((k) => k + 1);
+        }
       });
   }, [id, isNew, toast]);
 
@@ -141,9 +171,47 @@ export default function CampaignEditor() {
     [form, settings],
   );
 
+  const onVisualChange = useCallback((body) => {
+    setVisualBody(body);
+    setForm((f) => ({ ...f, html: buildVisualEmail(body) }));
+    setDirty(true);
+  }, []);
+
+  // Hand-editing the HTML takes the email out of visual mode for good.
+  const onHtmlChange = (e) => {
+    setForm((f) => ({ ...f, html: e.target.value.replace(VISUAL_MARKER, '') }));
+    setDirty(true);
+  };
+
+  const switchMode = (next) => {
+    if (next === mode) return;
+    if (next === 'html') return setMode('html');
+    if (isVisualHtml(form.html)) {
+      setVisualBody(extractVisualBody(form.html));
+      setEditorKey((k) => k + 1);
+      setMode('visual');
+    } else {
+      setConfirmVisual(true);
+    }
+  };
+
+  const convertToVisual = () => {
+    const body = htmlToEditorBody(form.html);
+    setVisualBody(body);
+    setForm((f) => ({ ...f, html: buildVisualEmail(body) }));
+    setDirty(true);
+    setEditorKey((k) => k + 1);
+    setMode('visual');
+    setConfirmVisual(false);
+  };
+
   const insertTag = (tag) => {
-    const el = editorRef.current;
     const token = `{{${tag}}}`;
+    if (mode === 'visual') {
+      visualApiRef.current?.chain().focus().insertContent(token).run();
+      return;
+    }
+    const el = editorRef.current;
     const start = el?.selectionStart ?? form.html.length;
     const end = el?.selectionEnd ?? form.html.length;
     const next = form.html.slice(0, start) + token + form.html.slice(end);
@@ -290,6 +358,15 @@ export default function CampaignEditor() {
             title="Content"
             className="editor-card"
             actions={
+              <div className="content-actions">
+              <div className="seg seg-text" role="group" aria-label="Editor type">
+                <button type="button" className={mode === 'visual' ? 'active' : ''} aria-pressed={mode === 'visual'} onClick={() => switchMode('visual')}>
+                  Visual
+                </button>
+                <button type="button" className={mode === 'html' ? 'active' : ''} aria-pressed={mode === 'html'} onClick={() => switchMode('html')}>
+                  HTML
+                </button>
+              </div>
               <div className="seg" role="group" aria-label="Preview device">
                 <button type="button" className={device === 'desktop' ? 'active' : ''} aria-pressed={device === 'desktop'} onClick={() => setDevice('desktop')}>
                   <Monitor size={16} aria-hidden="true" /><span className="sr-only">Desktop preview</span>
@@ -298,21 +375,49 @@ export default function CampaignEditor() {
                   <Smartphone size={16} aria-hidden="true" /><span className="sr-only">Mobile preview</span>
                 </button>
               </div>
+              </div>
             }
           >
             <div className="merge-bar" role="toolbar" aria-label="Insert merge tag">
               <span className="muted small">Insert:</span>
               {MERGE_TAGS.map((t) => (
-                <button key={t.tag} type="button" className="chip" onClick={() => insertTag(t.tag)}>
+                <button
+                  key={t.tag}
+                  type="button"
+                  className="chip"
+                  onMouseDown={(e) => e.preventDefault()} // keep the cursor in the editor
+                  onClick={() => insertTag(t.tag)}
+                >
                   {t.label}
                 </button>
               ))}
             </div>
             <div className="split">
-              <Field label="HTML" error={visibleErrors.html} className="code-field"
-                hint="Use {{tag|fallback}} for defaults. An unsubscribe link and your address footer are added automatically.">
-                <textarea ref={editorRef} className="code" spellCheck={false} value={form.html} onChange={set('html')} onBlur={touch('html')} />
-              </Field>
+              {mode === 'visual' ? (
+                <div className={`field code-field ${visibleErrors.html ? 'has-error' : ''}`}>
+                  <span className="field-label">Email content</span>
+                  <VisualEditor
+                    key={editorKey}
+                    initialContent={visualBody}
+                    onChange={onVisualChange}
+                    apiRef={visualApiRef}
+                    invalid={!!visibleErrors.html}
+                    describedBy="visual-help"
+                  />
+                  {visibleErrors.html ? (
+                    <p id="visual-help" className="field-error" role="alert">{visibleErrors.html}</p>
+                  ) : (
+                    <p id="visual-help" className="field-hint">
+                      Type like a normal email. Use the Insert buttons to personalise. An unsubscribe link and your address are added automatically.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <Field label="HTML" error={visibleErrors.html} className="code-field"
+                  hint="Use {{tag|fallback}} for defaults. An unsubscribe link and your address footer are added automatically.">
+                  <textarea ref={editorRef} className="code" spellCheck={false} value={form.html} onChange={onHtmlChange} onBlur={touch('html')} />
+                </Field>
+              )}
               <div className="preview-pane">
                 <div className="inbox-preview" aria-label="Inbox preview">
                   <strong className="truncate">{form.from_name || 'From name'}</strong>
@@ -329,6 +434,18 @@ export default function CampaignEditor() {
         </div>
       </div>
 
+      <ConfirmDialog
+        open={confirmVisual}
+        title="Switch to the visual editor?"
+        confirmLabel="Switch to visual"
+        onConfirm={convertToVisual}
+        onClose={() => setConfirmVisual(false)}
+      >
+        <p>
+          Your HTML will be converted so it can be edited visually. Text, headings, links and images are kept, but custom layouts
+          (tables, columns) and styling may be simplified.
+        </p>
+      </ConfirmDialog>
       <TestSendModal open={testOpen} onClose={() => setTestOpen(false)} save={save} dirty={dirty} campaignId={campaign?.id} defaultTo={user?.email} />
       <SendModal
         open={sendOpen}
