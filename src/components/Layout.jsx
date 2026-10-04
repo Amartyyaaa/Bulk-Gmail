@@ -1,10 +1,11 @@
 import { Suspense, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { BarChart3, LogOut, Mail, Menu, Settings, Users, X } from 'lucide-react';
+import { BarChart3, LogOut, Mail, Menu, Send, Settings, Users, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Spinner } from './ui.jsx';
 
 const NAV = [
+  { to: '/quick-send', label: 'Quick send', icon: Send },
   { to: '/campaigns', label: 'Campaigns', icon: Mail },
   { to: '/contacts', label: 'Contacts', icon: Users },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },

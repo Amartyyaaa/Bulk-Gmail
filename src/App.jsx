@@ -6,6 +6,7 @@ import { Spinner } from './components/ui.jsx';
 import { isConfigured } from './lib/supabase.js';
 import Login from './pages/Login.jsx';
 
+const QuickSend = lazy(() => import('./pages/QuickSend.jsx'));
 const Campaigns = lazy(() => import('./pages/Campaigns.jsx'));
 const CampaignEditor = lazy(() => import('./pages/CampaignEditor.jsx'));
 const CampaignReport = lazy(() => import('./pages/CampaignReport.jsx'));
@@ -39,7 +40,8 @@ export default function App() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
-            <Route index element={<Navigate to="/campaigns" replace />} />
+            <Route index element={<Navigate to="/quick-send" replace />} />
+            <Route path="/quick-send" element={<QuickSend />} />
             <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/campaigns/new" element={<CampaignEditor />} />
             <Route path="/campaigns/:id/edit" element={<CampaignEditor />} />

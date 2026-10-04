@@ -543,3 +543,10 @@ fieldset:disabled .field input, fieldset:disabled .field textarea { background: 
   content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: #9ca3af;
 }
 @media (max-width: 1280px) { .ve-content { min-height: 320px; } }
+
+/* Quick send */
+.quick-send { max-width: 860px; }
+.quick-body-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.quick-send .ve-content { min-height: 280px; }
+.recipient-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: -6px 0 0; }
+.quick-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
