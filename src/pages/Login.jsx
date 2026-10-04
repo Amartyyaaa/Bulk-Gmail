@@ -19,7 +19,7 @@ export default function Login() {
   const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  if (session) return <Navigate to={location.state?.from?.pathname || '/campaigns'} replace />;
+  if (session) return <Navigate to={location.state?.from?.pathname || '/quick-send'} replace />;
 
   const validate = () => {
     const next = {};
@@ -55,7 +55,7 @@ export default function Login() {
     const { error } = await signIn(email.trim(), password);
     setLoading(false);
     if (error) setFormError(error.message === 'Invalid login credentials' ? 'Email or password is incorrect.' : error.message);
-    else navigate(location.state?.from?.pathname || '/campaigns', { replace: true });
+    else navigate(location.state?.from?.pathname || '/quick-send', { replace: true });
   };
 
   if (mode === 'sent') {
