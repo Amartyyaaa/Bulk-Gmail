@@ -6,7 +6,7 @@ import { useSettings, useTags } from '../lib/hooks.js';
 import { num, toLocalInput } from '../lib/format.js';
 import { SAMPLE_CONTACT } from '../lib/templates.js';
 import {
-  STARTER_VISUAL, VISUAL_MARKER, buildVisualEmail, extractVisualBody, isVisualHtml,
+  EMAIL_STYLES, STARTER_VISUAL, VISUAL_MARKER, buildVisualEmail, emailStyleOf, extractVisualBody, isVisualHtml,
 } from '../lib/emailLayout.js';
 import { MERGE_TAGS, isValidEmail, renderEmail, unknownMergeTags } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -76,7 +76,8 @@ export default function CampaignEditor() {
   const { tags } = useTags();
 
   const [campaign, setCampaign] = useState(isNew ? null : undefined);
-  const [form, setForm] = useState(() => ({ ...EMPTY, html: buildVisualEmail(STARTER_VISUAL) }));
+  const [emailStyle, setEmailStyle] = useState('plain');
+  const [form, setForm] = useState(() => ({ ...EMPTY, html: buildVisualEmail(STARTER_VISUAL, { style: 'plain' }) }));
   const [mode, setMode] = useState('visual'); // visual | html
   const [visualBody, setVisualBody] = useState(STARTER_VISUAL);
   const [editorKey, setEditorKey] = useState(0);
@@ -120,7 +121,10 @@ export default function CampaignEditor() {
           setForm(Object.fromEntries(EDITABLE.map((k) => [k, data[k] ?? EMPTY[k]])));
           const body = extractVisualBody(data.html);
           setMode(body !== null ? 'visual' : 'html');
-          if (body !== null) setVisualBody(body);
+          if (body !== null) {
+            setVisualBody(body);
+            setEmailStyle(emailStyleOf(data.html));
+          }
           setEditorKey((k) => k + 1);
         }
       });
@@ -173,9 +177,15 @@ export default function CampaignEditor() {
 
   const onVisualChange = useCallback((body) => {
     setVisualBody(body);
-    setForm((f) => ({ ...f, html: buildVisualEmail(body) }));
+    setForm((f) => ({ ...f, html: buildVisualEmail(body, { style: emailStyle }) }));
     setDirty(true);
-  }, []);
+  }, [emailStyle]);
+
+  const changeEmailStyle = (style) => {
+    setEmailStyle(style);
+    setForm((f) => ({ ...f, html: buildVisualEmail(visualBody, { style }) }));
+    setDirty(true);
+  };
 
   // Hand-editing the HTML takes the email out of visual mode for good.
   const onHtmlChange = (e) => {
@@ -188,6 +198,7 @@ export default function CampaignEditor() {
     if (next === 'html') return setMode('html');
     if (isVisualHtml(form.html)) {
       setVisualBody(extractVisualBody(form.html));
+      setEmailStyle(emailStyleOf(form.html));
       setEditorKey((k) => k + 1);
       setMode('visual');
     } else {
@@ -198,7 +209,7 @@ export default function CampaignEditor() {
   const convertToVisual = () => {
     const body = htmlToEditorBody(form.html);
     setVisualBody(body);
-    setForm((f) => ({ ...f, html: buildVisualEmail(body) }));
+    setForm((f) => ({ ...f, html: buildVisualEmail(body, { style: emailStyle }) }));
     setDirty(true);
     setEditorKey((k) => k + 1);
     setMode('visual');
@@ -359,6 +370,14 @@ export default function CampaignEditor() {
             className="editor-card"
             actions={
               <div className="content-actions">
+              {mode === 'visual' && (
+                <label className="select-label">
+                  <span className="sr-only">Email style</span>
+                  <select value={emailStyle} onChange={(e) => changeEmailStyle(e.target.value)} title="Email style">
+                    {EMAIL_STYLES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                  </select>
+                </label>
+              )}
               <div className="seg seg-text" role="group" aria-label="Editor type">
                 <button type="button" className={mode === 'visual' ? 'active' : ''} aria-pressed={mode === 'visual'} onClick={() => switchMode('visual')}>
                   Visual

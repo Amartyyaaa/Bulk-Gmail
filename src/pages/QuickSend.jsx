@@ -5,7 +5,7 @@ import { callFunction, supabase } from '../lib/supabase.js';
 import { useSettings } from '../lib/hooks.js';
 import { num } from '../lib/format.js';
 import { parseRecipients } from '../lib/recipients.js';
-import { buildVisualEmail } from '../lib/emailLayout.js';
+import { EMAIL_STYLES, buildVisualEmail } from '../lib/emailLayout.js';
 import { isValidEmail, unknownMergeTags } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -37,6 +37,7 @@ export default function QuickSend() {
   const [fromEmail, setFromEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState(STARTER);
+  const [emailStyle, setEmailStyle] = useState('plain');
   const [recipientsText, setRecipientsText] = useState('');
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState({});
@@ -82,7 +83,7 @@ export default function QuickSend() {
       from_name: fromName.trim(),
       from_email: fromEmail.trim(),
       reply_to: settings?.default_reply_to ?? '',
-      html: buildVisualEmail(body),
+      html: buildVisualEmail(body, { style: emailStyle }),
       segment_tags: segmentTag ? [segmentTag] : [],
       batch_size: settings?.default_batch_size ?? 50,
       batch_delay_secs: settings?.default_batch_delay_secs ?? 10,
@@ -178,9 +179,16 @@ export default function QuickSend() {
             </Field>
           </div>
 
-          <Field label="Subject" error={errors.subject} required>
-            <input value={subject} onChange={(e) => { setSubject(e.target.value); clearError('subject'); }} />
-          </Field>
+          <div className="form-row">
+            <Field label="Subject" error={errors.subject} required>
+              <input value={subject} onChange={(e) => { setSubject(e.target.value); clearError('subject'); }} />
+            </Field>
+            <Field label="Email style" hint="Personal looks like a normal typed email — best chance of Gmail’s Primary tab.">
+              <select value={emailStyle} onChange={(e) => setEmailStyle(e.target.value)}>
+                {EMAIL_STYLES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </Field>
+          </div>
 
           <div className={`field ${errors.body ? 'has-error' : ''}`}>
             <div className="quick-body-head">
