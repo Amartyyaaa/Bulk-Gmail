@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { BUTTON_CLASS, STARTER_VISUAL, buildVisualEmail, extractVisualBody, isVisualHtml } from './emailLayout.js';
+import { BUTTON_CLASS, STARTER_VISUAL, buildVisualEmail, emailStyleOf, extractVisualBody, isVisualHtml } from './emailLayout.js';
 import { renderEmail } from '@shared/render.js';
 
 describe('visual email layout', () => {
@@ -43,5 +43,30 @@ describe('visual email layout', () => {
     expect(out.html).toContain('The Acme team');
     expect(out.html).toContain('1 Main St');
     expect(out.text).toContain('Read more (https://example.com)');
+  });
+});
+
+describe('personal (plain) style', () => {
+  it('has no designed wrapper, turns buttons into links, and round-trips', () => {
+    const body = `<p>Hi {{first_name}},</p><p><a class="${BUTTON_CLASS}" href="https://x.io">See samples</a></p>`;
+    const html = buildVisualEmail(body, { style: 'plain' });
+    expect(emailStyleOf(html)).toBe('plain');
+    expect(html).not.toContain('<table');
+    expect(html).not.toContain('background:#f4f4f7');
+    expect(html).not.toContain('display:inline-block');
+    expect(extractVisualBody(html)).toContain('See samples');
+    expect(emailStyleOf(buildVisualEmail(body))).toBe('designed');
+  });
+
+  it('uses the quiet text footer when rendered for sending', () => {
+    const out = renderEmail({
+      campaign: { subject: 's', preheader: '', html: buildVisualEmail('<p>Hi</p>', { style: 'plain' }) },
+      contact: {},
+      settings: { company_name: 'Grey Graphics', physical_address: 'Patna' },
+      unsubscribeUrl: 'https://u.test',
+    });
+    expect(out.html).not.toContain('<table');
+    expect(out.html).toContain('Grey Graphics, Patna');
+    expect(out.html).toContain('href="https://u.test"');
   });
 });

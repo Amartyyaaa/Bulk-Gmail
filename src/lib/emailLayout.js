@@ -2,7 +2,23 @@
 // table wrapper) and back again. Email clients ignore <style> blocks, so every
 // element gets its styles inline.
 
+import { PLAIN_MARKER } from '@shared/render.js';
+
 export const VISUAL_MARKER = '<!--mailroom:visual-->';
+
+/**
+ * 'plain' sends the text as a normal-looking personal email (better odds of
+ * Gmail's Primary tab); 'designed' wraps it in a branded card layout.
+ */
+export const EMAIL_STYLES = [
+  { value: 'plain', label: 'Personal (plain)' },
+  { value: 'designed', label: 'Designed' },
+];
+
+export function emailStyleOf(html) {
+  return String(html ?? '').includes(PLAIN_MARKER) ? 'plain' : 'designed';
+}
+
 const BODY_START = '<!--mr-body-->';
 const BODY_END = '<!--/mr-body-->';
 
@@ -20,6 +36,21 @@ const TAG_STYLES = {
   a: `color:${ACCENT};text-decoration:underline;`,
   img: 'max-width:100%;height:auto;display:block;border:0;margin:0 auto 16px;',
   hr: 'border:0;border-top:1px solid #e5e7eb;margin:24px 0;',
+};
+
+// Personal style: close to what a mail client produces when you type an email.
+const PLAIN_TAG_STYLES = {
+  p: 'margin:0 0 12px;',
+  h1: 'margin:0 0 12px;font-size:20px;line-height:28px;font-weight:bold;',
+  h2: 'margin:16px 0 8px;font-size:17px;line-height:24px;font-weight:bold;',
+  h3: 'margin:12px 0 6px;font-size:15px;line-height:22px;font-weight:bold;',
+  ul: 'margin:0 0 12px;padding-left:24px;',
+  ol: 'margin:0 0 12px;padding-left:24px;',
+  li: 'margin:0 0 4px;',
+  blockquote: 'margin:0 0 12px;padding-left:12px;border-left:3px solid #cccccc;color:#555555;',
+  a: 'color:#1155cc;',
+  img: 'max-width:100%;height:auto;border:0;',
+  hr: 'border:0;border-top:1px solid #dddddd;margin:16px 0;',
 };
 
 const BUTTON_STYLE =
@@ -50,14 +81,16 @@ export function extractVisualBody(html) {
 }
 
 /** Wrap editor HTML into the full, inline-styled email document. */
-export function buildVisualEmail(bodyHtml) {
+export function buildVisualEmail(bodyHtml, { style = 'designed' } = {}) {
+  const plain = style === 'plain';
   const doc = new DOMParser().parseFromString(`<div id="root">${bodyHtml ?? ''}</div>`, 'text/html');
   const root = doc.getElementById('root');
 
   root.querySelectorAll('*').forEach((el) => {
     const tag = el.tagName.toLowerCase();
-    const isButton = tag === 'a' && el.classList.contains(BUTTON_CLASS);
-    const base = isButton ? BUTTON_STYLE : TAG_STYLES[tag];
+    // In personal style a "button" is just a normal link.
+    const isButton = !plain && tag === 'a' && el.classList.contains(BUTTON_CLASS);
+    const base = isButton ? BUTTON_STYLE : (plain ? PLAIN_TAG_STYLES : TAG_STYLES)[tag];
     if (base) {
       // Keep editor-set styles (alignment, colour) after the defaults so they win.
       el.setAttribute('style', base + (el.getAttribute('style') ?? ''));
@@ -66,6 +99,18 @@ export function buildVisualEmail(bodyHtml) {
     // An empty paragraph is a deliberate blank line; give it height in email clients.
     if (tag === 'p' && !el.textContent.trim() && !el.querySelector('img, br')) el.innerHTML = '&nbsp;';
   });
+
+  if (plain) {
+    return (
+      VISUAL_MARKER +
+      PLAIN_MARKER +
+      '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:22px;color:#222222;">' +
+      BODY_START +
+      root.innerHTML +
+      BODY_END +
+      '</div>'
+    );
+  }
 
   return (
     VISUAL_MARKER +

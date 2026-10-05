@@ -58,6 +58,20 @@ export function unknownMergeTags(template) {
   return [...found];
 }
 
+/** Marks an email written in the plain "personal" style (see src/lib/emailLayout.js). */
+export const PLAIN_MARKER = '<!--mailroom:plain-->';
+
+/** Footer for personal-style emails: a quiet line of text, like a normal signature. */
+export function plainFooter({ companyName, physicalAddress, unsubscribeUrl }) {
+  const who = [companyName, physicalAddress].filter(Boolean).map(escapeHtml).join(', ');
+  return (
+    '<p style="margin:28px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:18px;color:#888888;">' +
+    (who ? `${who}<br>` : '') +
+    `Don’t want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#888888;">Unsubscribe</a>` +
+    '</p>'
+  );
+}
+
 export function complianceFooter({ companyName, physicalAddress, unsubscribeUrl }) {
   const who = [companyName, physicalAddress].filter(Boolean).map(escapeHtml).join(' &middot; ');
   return (
@@ -93,7 +107,8 @@ export function renderEmail({ campaign, contact, settings = {}, unsubscribeUrl }
     company_name: settings.company_name || '',
   });
   const body = applyMergeTags(campaign.html, vars, { html: true });
-  const footer = complianceFooter({
+  const footerFn = String(campaign.html ?? '').includes(PLAIN_MARKER) ? plainFooter : complianceFooter;
+  const footer = footerFn({
     companyName: settings.company_name,
     physicalAddress: settings.physical_address,
     unsubscribeUrl,
