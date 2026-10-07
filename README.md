@@ -63,6 +63,13 @@ Email footer / List-Unsubscribe ─▶ unsubscribe (Edge Fn) ─▶ suppression_
 
 Deploy the front end to any static host, and set `APP_URL` to its URL so unsubscribe links point at it.
 
+**Links on your own domain (recommended for inbox placement).** By default the List-Unsubscribe header points at `<project>.supabase.co` and the footer link at your app's host. Gmail treats links on a different domain from the From address as a marketing/spam signal. To put every link on your domain:
+
+1. In Vercel → Project → Settings → Domains, add a subdomain such as `app.yourdomain.com` and create the CNAME record it shows at your DNS provider.
+2. `supabase secrets set LINK_BASE_URL=https://app.yourdomain.com` (no redeploy needed; secrets apply on the next run).
+
+`api/unsubscribe.js` (a Vercel Function) forwards one-click unsubscribes to the Edge Function, using the `VITE_SUPABASE_URL` already set in Vercel.
+
 ## Throttling guidance
 
 - `ESP_MAX_PER_SECOND` must stay within the provider's rate limit: Resend defaults to 2/s, and SES uses your account's max send rate.
