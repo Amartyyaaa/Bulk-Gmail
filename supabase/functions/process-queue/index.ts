@@ -10,8 +10,14 @@
 //   4. retries transient failures with exponential backoff, fails permanent ones
 //   5. marks campaigns sent when their queue drains
 // Work that doesn't fit in the time budget is picked up by the next run.
+//
+// Campaigns with delivery = 'broadcast' go through Resend Broadcasts instead:
+// the queue is synced into a Resend segment (same claiming, retries and
+// suppression checks), then one broadcast is sent to that segment.
 
-import { createRateLimiter, getEsp } from '../_shared/esp.ts';
+import { createRateLimiter, formatFrom, getEsp } from '../_shared/esp.ts';
+import { RESEND_UNSUBSCRIBE_URL, renderEmail, resendBroadcastVars } from '../_shared/render.js';
+import { addToSegment, createSegment, sendBroadcast, setThrottle } from '../_shared/resendBroadcast.ts';
 import { adminClient, buildMessage, json, loadSettings, sleep, type CampaignRow } from '../_shared/util.ts';
 
 const TIME_BUDGET_MS = Number(Deno.env.get('PROCESS_TIME_BUDGET_MS') ?? 50_000);
@@ -33,6 +39,7 @@ Deno.serve(async (req) => {
   const db = adminClient();
   const esp = getEsp();
   const limit = createRateLimiter(esp.maxPerSecond);
+  setThrottle(limit);
   const settings = await loadSettings(db);
   const summary: Record<string, unknown> = {};
 
@@ -63,7 +70,9 @@ Deno.serve(async (req) => {
     if (!leased) continue;
 
     try {
-      summary[campaign.id] = await runCampaign(campaign);
+      summary[campaign.id] = campaign.delivery === 'broadcast'
+        ? await runBroadcast(campaign)
+        : await runCampaign(campaign);
     } finally {
       await db.from('campaigns').update({ lease_until: null }).eq('id', campaign.id);
     }
@@ -150,5 +159,154 @@ Deno.serve(async (req) => {
     }
 
     return { batches, sent, failed, retried };
+  }
+
+  /** Stop a broadcast campaign and show the reason on its page. */
+  async function pauseWithError(campaignId: string, message: string) {
+    await db.from('campaigns')
+      .update({ status: 'paused', broadcast_error: message, updated_at: new Date().toISOString() })
+      .eq('id', campaignId).eq('status', 'sending');
+    return { paused: message };
+  }
+
+  async function runBroadcast(campaign: CampaignRow & {
+    name: string; preheader: string; esp_segment_id: string | null; esp_broadcast_id: string | null;
+  }) {
+    if (esp.name !== 'resend') {
+      return pauseWithError(campaign.id, 'Sending as a broadcast needs ESP_PROVIDER=resend.');
+    }
+    if (campaign.esp_broadcast_id) {
+      // A previous run sent it but stopped before closing the campaign.
+      await db.from('campaign_recipients')
+        .update({ status: 'sent', sent_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('campaign_id', campaign.id).eq('status', 'sending').is('claimed_at', null);
+      await db.rpc('finalize_campaign_if_done', { p_campaign_id: campaign.id });
+      return { already_sent: campaign.esp_broadcast_id };
+    }
+
+    let segmentId = campaign.esp_segment_id;
+    if (!segmentId) {
+      const seg = await createSegment(`${campaign.name} · ${campaign.id.slice(0, 8)}`);
+      if (!seg.ok) {
+        if (seg.transient) return { retry: seg.error };
+        return pauseWithError(campaign.id, `Could not create the Resend segment: ${seg.error}`);
+      }
+      segmentId = seg.data.id;
+      await db.from('campaigns').update({ esp_segment_id: segmentId }).eq('id', campaign.id);
+    }
+
+    // 1. Sync the queue into the segment. Synced rows wait as 'sending' with no
+    //    claim time (so they are neither re-claimed nor released) until the
+    //    broadcast goes out.
+    let synced = 0, skipped = 0, failed = 0, retried = 0;
+    let authError: string | null = null;
+    while (timeLeft() > 8_000 && !authError) {
+      const { data: fresh } = await db.from('campaigns').select('status').eq('id', campaign.id).single();
+      if (fresh?.status !== 'sending') return { synced, stopped: fresh?.status };
+
+      // Up to three API calls per contact (create, add to segment, read state).
+      const fits = Math.floor((esp.maxPerSecond * (timeLeft() - 8_000)) / 3000);
+      if (fits < 1) break;
+      const { data: batch, error } = await db.rpc('claim_recipients', {
+        p_campaign_id: campaign.id,
+        p_limit: Math.min(100, fits),
+      });
+      if (error) throw error;
+      if (!batch?.length) break;
+
+      await Promise.all(batch.map(async (r: {
+        id: string; email: string; attempts: number; first_name: string | null; last_name: string | null;
+      }) => {
+        const res = await addToSegment(segmentId!, r);
+        const now = new Date().toISOString();
+        if (res.ok && res.data.unsubscribed) {
+          skipped++;
+          await db.rpc('record_external_unsubscribe', { p_email: r.email, p_source: 'resend', p_campaign_id: null });
+          await db.from('campaign_recipients').update({
+            status: 'skipped', last_error: 'Unsubscribed in Resend', claimed_at: null, updated_at: now,
+          }).eq('id', r.id);
+        } else if (res.ok) {
+          synced++;
+          await db.from('campaign_recipients').update({
+            status: 'sending', claimed_at: null, last_error: null, updated_at: now,
+          }).eq('id', r.id);
+        } else if (res.status === 401 || res.status === 403) {
+          authError = res.error;
+          await db.from('campaign_recipients').update({
+            status: 'queued', attempts: Math.max(0, r.attempts - 1), claimed_at: null, updated_at: now,
+          }).eq('id', r.id);
+        } else if (res.transient && r.attempts < MAX_ATTEMPTS) {
+          retried++;
+          await db.from('campaign_recipients').update({
+            status: 'queued', last_error: res.error, claimed_at: null, updated_at: now,
+            next_attempt_at: new Date(Date.now() + 30 * 2 ** (r.attempts - 1) * 1000).toISOString(),
+          }).eq('id', r.id);
+        } else {
+          failed++;
+          await db.from('campaign_recipients').update({
+            status: 'failed', last_error: res.error, claimed_at: null, updated_at: now,
+          }).eq('id', r.id);
+          await db.from('events').insert({
+            campaign_id: campaign.id, recipient_id: r.id, email: r.email, type: 'failed',
+            meta: { message: res.error, status: res.status },
+          });
+        }
+      }));
+
+      await db.from('campaigns')
+        .update({ lease_until: new Date(Date.now() + LEASE_SECONDS * 1000).toISOString() })
+        .eq('id', campaign.id);
+    }
+    if (authError) return pauseWithError(campaign.id, authError);
+
+    // 2. Send once everything is synced (retries still waiting keep it open).
+    const { count: waiting } = await db.from('campaign_recipients')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', campaign.id)
+      .or('status.eq.queued,and(status.eq.sending,claimed_at.not.is.null)');
+    if (waiting) return { synced, skipped, failed, retried, waiting };
+
+    const { count: ready } = await db.from('campaign_recipients')
+      .select('id', { count: 'exact', head: true })
+      .eq('campaign_id', campaign.id).eq('status', 'sending');
+    if (!ready) {
+      await db.rpc('finalize_campaign_if_done', { p_campaign_id: campaign.id });
+      return { synced, skipped, failed, nothing_to_send: true };
+    }
+
+    const rendered = renderEmail({
+      campaign,
+      contact: {},
+      settings,
+      unsubscribeUrl: RESEND_UNSUBSCRIBE_URL,
+      vars: resendBroadcastVars(settings),
+    });
+    const sent = await sendBroadcast({
+      segmentId: segmentId!,
+      name: campaign.name,
+      from: formatFrom(campaign.from_name, campaign.from_email),
+      replyTo: campaign.reply_to,
+      subject: rendered.subject,
+      previewText: campaign.preheader,
+      html: rendered.html,
+      text: rendered.text,
+    });
+    if (!sent.ok) {
+      if (sent.transient) {
+        await db.from('campaigns').update({ broadcast_error: sent.error }).eq('id', campaign.id);
+        return { synced, broadcast_retry: sent.error };
+      }
+      return pauseWithError(campaign.id, `Resend rejected the broadcast: ${sent.error}`);
+    }
+
+    const now = new Date().toISOString();
+    await db.from('campaigns')
+      .update({ esp_broadcast_id: sent.data.id, broadcast_error: null })
+      .eq('id', campaign.id);
+    await db.from('campaign_recipients')
+      .update({ status: 'sent', sent_at: now, updated_at: now })
+      .eq('campaign_id', campaign.id).eq('status', 'sending').is('claimed_at', null);
+    await db.rpc('finalize_campaign_if_done', { p_campaign_id: campaign.id });
+    return { synced, skipped, failed, broadcast: sent.data.id, ready };
   }
 });

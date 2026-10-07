@@ -8,6 +8,7 @@ import { SAMPLE_CONTACT } from '../lib/templates.js';
 import {
   EMAIL_STYLES, STARTER_VISUAL, VISUAL_MARKER, buildVisualEmail, emailStyleOf, extractVisualBody, isVisualHtml,
 } from '../lib/emailLayout.js';
+import { DELIVERY_METHODS, deliveryHint, deliveryLabel } from '../lib/delivery.js';
 import { MERGE_TAGS, isValidEmail, renderEmail, unknownMergeTags } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -25,6 +26,7 @@ const EMPTY = {
   segment_tags: [],
   batch_size: 50,
   batch_delay_secs: 10,
+  delivery: 'individual',
 };
 
 const EDITABLE = Object.keys(EMPTY);
@@ -348,19 +350,28 @@ export default function CampaignEditor() {
             </p>
           </Card>
 
-          <Card title="Throttling">
-            <div className="form-row">
-              <Field label="Batch size" error={visibleErrors.batch_size} hint="Emails per batch.">
-                <input type="number" min={1} max={1000} value={form.batch_size} onChange={set('batch_size')} onBlur={touch('batch_size')} />
-              </Field>
-              <Field label="Delay between batches (s)" error={visibleErrors.batch_delay_secs} hint="Pause after each batch.">
-                <input type="number" min={0} max={3600} value={form.batch_delay_secs} onChange={set('batch_delay_secs')} onBlur={touch('batch_delay_secs')} />
-              </Field>
-            </div>
-            <p className="muted small">
-              Sends are also capped at your provider’s per-second rate limit. New domains should start small (e.g. 50 every 30s) and ramp up
-              to build sender reputation.
-            </p>
+          <Card title="Sending">
+            <Field label="Send as" hint={deliveryHint(form.delivery)}>
+              <select value={form.delivery} onChange={set('delivery')}>
+                {DELIVERY_METHODS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
+            </Field>
+            {form.delivery !== 'broadcast' && (
+              <>
+                <div className="form-row">
+                  <Field label="Batch size" error={visibleErrors.batch_size} hint="Emails per batch.">
+                    <input type="number" min={1} max={1000} value={form.batch_size} onChange={set('batch_size')} onBlur={touch('batch_size')} />
+                  </Field>
+                  <Field label="Delay between batches (s)" error={visibleErrors.batch_delay_secs} hint="Pause after each batch.">
+                    <input type="number" min={0} max={3600} value={form.batch_delay_secs} onChange={set('batch_delay_secs')} onBlur={touch('batch_delay_secs')} />
+                  </Field>
+                </div>
+                <p className="muted small">
+                  Sends are also capped at your provider’s per-second rate limit. New domains should start small (e.g. 50 every 30s) and ramp up
+                  to build sender reputation.
+                </p>
+              </>
+            )}
           </Card>
         </div>
 
@@ -582,7 +593,10 @@ function SendModal({ open, onClose, save, dirty, campaignId, audience, form, set
           <div><dt>Subject</dt><dd>{form.subject}</dd></div>
           <div><dt>From</dt><dd>{form.from_name} &lt;{form.from_email}&gt;</dd></div>
           <div><dt>Audience</dt><dd>{form.segment_tags.length ? `Tagged ${form.segment_tags.join(', ')}` : 'All opted-in contacts'} · {num(audience)} recipients</dd></div>
-          <div><dt>Throttle</dt><dd>{form.batch_size} per batch, {form.batch_delay_secs}s apart{estimateMins > 0 && ` · about ${estimateMins} min total`}</dd></div>
+          <div><dt>Send as</dt><dd>{deliveryLabel(form.delivery)}</dd></div>
+          {form.delivery !== 'broadcast' && (
+            <div><dt>Throttle</dt><dd>{form.batch_size} per batch, {form.batch_delay_secs}s apart{estimateMins > 0 && ` · about ${estimateMins} min total`}</dd></div>
+          )}
         </dl>
         {missingFooter && (
           <div className="alert alert-error" role="alert">

@@ -70,6 +70,25 @@ Deploy the front end to any static host, and set `APP_URL` to its URL so unsubsc
 
 `api/unsubscribe.js` (a Vercel Function) forwards one-click unsubscribes to the Edge Function, using the `VITE_SUPABASE_URL` already set in Vercel.
 
+## Sending as a Resend Broadcast (optional)
+
+Each campaign (and Quick send) has a **Send as** option:
+
+- **Individual emails** (default): one API email per person, throttled in batches, with full per-person tracking.
+- **Resend Broadcast**: the recipients are added as Resend contacts in a new segment for the campaign, then one Broadcast is sent to that segment.
+
+Broadcast mode needs:
+
+1. `ESP_PROVIDER=resend`, and a `RESEND_API_KEY` with **Full access** (a "Sending access" key can't manage contacts). If the key is wrong, the campaign pauses and shows the error; fix the key and press Resume.
+2. In your Resend webhook, also tick **contact.updated**, so people who unsubscribe through Resend's link are added to the suppression list here.
+
+Notes:
+
+- The app still decides who gets the email: only opted-in, unsuppressed contacts are added, and anyone Resend already has as unsubscribed is skipped and suppressed here.
+- Merge tags become Resend placeholders (`{{first_name|there}}` → `{{{FIRST_NAME|there}}}`), and the footer's unsubscribe link becomes `{{{RESEND_UNSUBSCRIBE_URL}}}`.
+- Resend's plan limits on contacts apply. Delivery, bounce and complaint events still show here; Resend's dashboard has the full Broadcast report.
+- Sending through Broadcasts doesn't change inbox placement by itself: Gmail sorts mail the same way whichever Resend API was used.
+
 ## Throttling guidance
 
 - `ESP_MAX_PER_SECOND` must stay within the provider's rate limit: Resend defaults to 2/s, and SES uses your account's max send rate.

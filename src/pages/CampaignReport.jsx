@@ -112,15 +112,32 @@ export default function CampaignReport() {
           {dateTime(campaign.status === 'scheduled' ? campaign.scheduled_at : campaign.started_at)}
         </span>
         {campaign.completed_at && <span><span className="muted">Finished</span> {dateTime(campaign.completed_at)}</span>}
+        {campaign.delivery === 'broadcast' && <span><span className="muted">Sent as</span> Resend Broadcast</span>}
       </div>
+
+      {campaign.broadcast_error && (
+        <div className="alert alert-error" role="alert">
+          <strong>Broadcast problem:</strong> {campaign.broadcast_error}
+          {campaign.status === 'paused' && ' Fix it, then press Resume.'}
+        </div>
+      )}
+      {campaign.delivery === 'broadcast' && campaign.esp_broadcast_id && (
+        <div className="alert alert-info">
+          Sent as a Resend Broadcast. Opens, clicks and unsubscribes are also shown in Resend → Broadcasts.
+        </div>
+      )}
 
       {campaign.status !== 'scheduled' && s.total > 0 && (
         <Card>
           <div className="progress-head">
             <span><strong>{num(processed)}</strong> of {num(s.total)} processed</span>
             <span className="muted small">
-              {campaign.batch_size} per batch · {campaign.batch_delay_secs}s delay
-              {campaign.last_batch_at && ` · last batch ${relative(campaign.last_batch_at)}`}
+              {campaign.delivery === 'broadcast'
+                ? (campaign.esp_broadcast_id ? 'Broadcast sent' : 'Adding recipients to Resend, then sending one Broadcast')
+                : <>
+                  {campaign.batch_size} per batch · {campaign.batch_delay_secs}s delay
+                  {campaign.last_batch_at && ` · last batch ${relative(campaign.last_batch_at)}`}
+                </>}
             </span>
           </div>
           <div className="progress progress-lg" role="progressbar" aria-label="Send progress"
