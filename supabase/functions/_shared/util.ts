@@ -43,9 +43,21 @@ export async function loadSettings(db: SupabaseClient): Promise<Settings> {
   return data;
 }
 
-/** Public URL of the unsubscribe Edge Function (used for List-Unsubscribe). */
+/**
+ * Optional base URL on the sender's own domain (e.g. https://mail.example.com,
+ * the Vercel app on a custom domain). When set, every link in the email -- the
+ * unsubscribe page and the List-Unsubscribe header -- uses that domain, so the
+ * links match the From domain. Mismatched link domains are a spam/Promotions signal.
+ */
+function linkBase() {
+  return (Deno.env.get('LINK_BASE_URL') ?? '').trim().replace(/\/$/, '');
+}
+
+/** One-click URL for the List-Unsubscribe header (RFC 8058). */
 function unsubscribeEndpoint(token: string, recipientId?: string) {
-  const u = new URL(`${Deno.env.get('SUPABASE_URL')}/functions/v1/unsubscribe`);
+  const base = linkBase();
+  // api/unsubscribe.js on the Vercel app proxies to the Edge Function.
+  const u = new URL(base ? `${base}/api/unsubscribe` : `${Deno.env.get('SUPABASE_URL')}/functions/v1/unsubscribe`);
   u.searchParams.set('t', token);
   if (recipientId) u.searchParams.set('r', recipientId);
   return u.toString();
@@ -53,7 +65,7 @@ function unsubscribeEndpoint(token: string, recipientId?: string) {
 
 /** Human-facing unsubscribe page in the React app. */
 function unsubscribePage(token: string, recipientId?: string) {
-  const appUrl = (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '');
+  const appUrl = linkBase() || (Deno.env.get('APP_URL') ?? '').replace(/\/$/, '');
   const u = new URL(`${appUrl}/unsubscribe`);
   u.searchParams.set('t', token);
   if (recipientId) u.searchParams.set('r', recipientId);
