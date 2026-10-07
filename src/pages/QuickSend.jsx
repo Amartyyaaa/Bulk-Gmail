@@ -6,6 +6,7 @@ import { useSettings } from '../lib/hooks.js';
 import { num } from '../lib/format.js';
 import { parseRecipients } from '../lib/recipients.js';
 import { EMAIL_STYLES, buildVisualEmail } from '../lib/emailLayout.js';
+import { DELIVERY_METHODS, deliveryHint } from '../lib/delivery.js';
 import { isValidEmail, unknownMergeTags } from '@shared/render.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -38,6 +39,7 @@ export default function QuickSend() {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState(STARTER);
   const [emailStyle, setEmailStyle] = useState('plain');
+  const [delivery, setDelivery] = useState('individual');
   const [recipientsText, setRecipientsText] = useState('');
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState({});
@@ -85,6 +87,7 @@ export default function QuickSend() {
       reply_to: settings?.default_reply_to ?? '',
       html: buildVisualEmail(body, { style: emailStyle }),
       segment_tags: segmentTag ? [segmentTag] : [],
+      delivery,
       batch_size: settings?.default_batch_size ?? 50,
       batch_delay_secs: settings?.default_batch_delay_secs ?? 10,
       updated_at: new Date().toISOString(),
@@ -179,9 +182,15 @@ export default function QuickSend() {
             </Field>
           </div>
 
+          <Field label="Subject" error={errors.subject} required>
+            <input value={subject} onChange={(e) => { setSubject(e.target.value); clearError('subject'); }} />
+          </Field>
+
           <div className="form-row">
-            <Field label="Subject" error={errors.subject} required>
-              <input value={subject} onChange={(e) => { setSubject(e.target.value); clearError('subject'); }} />
+            <Field label="Send as" hint={deliveryHint(delivery)}>
+              <select value={delivery} onChange={(e) => setDelivery(e.target.value)}>
+                {DELIVERY_METHODS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+              </select>
             </Field>
             <Field label="Email style" hint="Personal looks like a normal typed email — best chance of Gmail’s Primary tab.">
               <select value={emailStyle} onChange={(e) => setEmailStyle(e.target.value)}>
@@ -270,8 +279,10 @@ export default function QuickSend() {
       >
         <p><strong>{subject}</strong></p>
         <p className="muted small">
-          Emails go out in batches of {settings?.default_batch_size ?? 50}. Anyone who unsubscribed or bounced before is skipped
-          automatically. You’ll see live progress on the next screen.
+          {delivery === 'broadcast'
+            ? 'Recipients are added to Resend, then sent as one Broadcast.'
+            : `Emails go out in batches of ${settings?.default_batch_size ?? 50}.`}{' '}
+          Anyone who unsubscribed or bounced before is skipped automatically. You’ll see progress on the next screen.
         </p>
       </ConfirmDialog>
     </div>

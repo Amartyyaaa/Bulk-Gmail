@@ -13,7 +13,7 @@ import { adminClient, json } from '../_shared/util.ts';
 type Mapped = {
   providerEventId: string;
   messageId: string;
-  type: 'delivered' | 'delivery_delayed' | 'open' | 'click' | 'bounce' | 'complaint' | 'failed';
+  type: 'delivered' | 'delivery_delayed' | 'open' | 'click' | 'bounce' | 'complaint' | 'failed' | 'unsubscribe';
   occurredAt?: string;
   url?: string;
   hardBounce?: boolean;
@@ -37,6 +37,15 @@ Deno.serve(async (req) => {
   const db = adminClient();
   const results: string[] = [];
   for (const ev of events) {
+    if (ev.type === 'unsubscribe') {
+      // Someone used Resend's hosted unsubscribe link (broadcast emails).
+      const { error } = await db.rpc('record_external_unsubscribe', {
+        p_email: ev.meta?.email ?? null, p_source: 'resend', p_campaign_id: null,
+      });
+      if (error) return json({ error: error.message }, 500);
+      results.push('unsubscribe');
+      continue;
+    }
     const { data, error } = await db.rpc('record_esp_event', {
       p_provider_event_id: ev.providerEventId,
       p_provider_message_id: ev.messageId,
@@ -78,7 +87,15 @@ async function handleResend(req: Request, raw: string): Promise<Mapped[]> {
 
   const payload = JSON.parse(raw);
   const d = payload.data ?? {};
-  const base = { providerEventId: `resend:${id}`, messageId: d.email_id, occurredAt: payload.created_at };
+  // Broadcast emails carry Resend's broadcast id; the address lets us match the recipient.
+  const broadcast = d.broadcast_id ? { broadcast_id: d.broadcast_id, to: [d.to].flat()[0] } : {};
+  const base = { providerEventId: `resend:${id}`, messageId: d.email_id, occurredAt: payload.created_at, meta: broadcast };
+
+  if (payload.type === 'contact.updated' || payload.type === 'contact.created') {
+    return d.unsubscribed === true && d.email
+      ? [{ ...base, messageId: '', type: 'unsubscribe', meta: { email: d.email } }]
+      : [];
+  }
 
   switch (payload.type) {
     case 'email.delivered':
@@ -94,13 +111,13 @@ async function handleResend(req: Request, raw: string): Promise<Mapped[]> {
       const kind = String(d.bounce?.type ?? 'Permanent');
       return [{
         ...base, type: 'bounce', hardBounce: !/transient|soft/i.test(kind),
-        meta: { message: d.bounce?.message, bounce_type: kind, sub_type: d.bounce?.subType },
+        meta: { ...broadcast, message: d.bounce?.message, bounce_type: kind, sub_type: d.bounce?.subType },
       }];
     }
     case 'email.complained':
       return [{ ...base, type: 'complaint' }];
     case 'email.failed':
-      return [{ ...base, type: 'failed', meta: { message: d.failed?.reason } }];
+      return [{ ...base, type: 'failed', meta: { ...broadcast, message: d.failed?.reason } }];
     default:
       return []; // email.sent etc. — status already recorded at send time
   }

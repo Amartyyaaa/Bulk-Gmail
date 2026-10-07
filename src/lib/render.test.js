@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyMergeTags, htmlToText, isValidEmail, renderEmail, unknownMergeTags } from '@shared/render.js';
+import {
+  RESEND_UNSUBSCRIBE_URL, applyMergeTags, htmlToText, isValidEmail, renderEmail, resendBroadcastVars, unknownMergeTags,
+} from '@shared/render.js';
 
 const settings = { company_name: 'Acme', physical_address: '1 Main St, Springfield' };
 
@@ -55,5 +57,27 @@ describe('helpers', () => {
 
   it('converts html to text', () => {
     expect(htmlToText('<p>One</p><p>Two <a href="https://x.y">link</a></p>')).toBe('One\nTwo link (https://x.y)');
+  });
+});
+
+describe('Resend Broadcast rendering', () => {
+  it('turns merge tags into Resend placeholders and uses Resend’s unsubscribe link', () => {
+    const out = renderEmail({
+      campaign: { subject: 'Hi {{first_name|friend}}', preheader: '', html: '<p>Hi {{first_name|there}}, {{email}} at {{company_name}}</p><a href="{{unsubscribe_url}}">x</a>' },
+      contact: {},
+      settings: { company_name: 'Grey & Co', physical_address: 'Patna' },
+      unsubscribeUrl: RESEND_UNSUBSCRIBE_URL,
+      vars: resendBroadcastVars({ company_name: 'Grey & Co' }),
+    });
+    expect(out.subject).toBe('Hi {{{FIRST_NAME|friend}}}');
+    expect(out.html).toContain('Hi {{{FIRST_NAME|there}}}, {{{EMAIL}}} at Grey &amp; Co');
+    expect(out.html).toContain('href="{{{RESEND_UNSUBSCRIBE_URL}}}"');
+    expect(out.html).not.toContain('{{unsubscribe_url}}');
+  });
+
+  it('strips braces from fallbacks so they cannot break the placeholder', () => {
+    const vars = resendBroadcastVars();
+    expect(vars.first_name('a}}}b')).toBe('{{{FIRST_NAME|ab}}}');
+    expect(vars.first_name('')).toBe('{{{FIRST_NAME}}}');
   });
 });

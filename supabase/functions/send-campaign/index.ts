@@ -58,6 +58,9 @@ Deno.serve(async (req) => {
     case 'send': {
       const problems = validate(campaign, settings, { requireAddress: true });
       if (problems.length) return json({ error: problems.join(' ') }, 422);
+      if (campaign.delivery === 'broadcast' && getEsp().name !== 'resend') {
+        return json({ error: 'Sending as a broadcast needs ESP_PROVIDER=resend.' }, 422);
+      }
 
       const when = scheduled_at ? new Date(scheduled_at) : new Date();
       if (Number.isNaN(when.getTime())) return json({ error: 'Invalid schedule time' }, 400);
@@ -82,7 +85,7 @@ Deno.serve(async (req) => {
       // A campaign paused before its queue was built goes back to scheduled.
       const { count } = await db.from('campaign_recipients')
         .select('id', { count: 'exact', head: true }).eq('campaign_id', campaign_id);
-      const res = await setStatus(['paused'], count ? { status: 'sending' } : { status: 'scheduled' });
+      const res = await setStatus(['paused'], { status: count ? 'sending' : 'scheduled', broadcast_error: null });
       if (res.ok) kickWorker(campaign_id);
       return res;
     }
@@ -93,6 +96,10 @@ Deno.serve(async (req) => {
         await db.from('campaign_recipients')
           .update({ status: 'skipped', last_error: 'Campaign cancelled', updated_at: new Date().toISOString() })
           .eq('campaign_id', campaign_id).eq('status', 'queued');
+        // Broadcast recipients already synced to Resend, waiting for the send.
+        await db.from('campaign_recipients')
+          .update({ status: 'skipped', last_error: 'Campaign cancelled', updated_at: new Date().toISOString() })
+          .eq('campaign_id', campaign_id).eq('status', 'sending').is('claimed_at', null);
       }
       return res;
     }

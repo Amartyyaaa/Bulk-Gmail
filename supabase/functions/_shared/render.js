@@ -43,9 +43,35 @@ export function applyMergeTags(template, vars, { html = true } = {}) {
   return String(template ?? '').replace(TAG_RE, (_m, name, fallback) => {
     const key = name.toLowerCase();
     const raw = vars[key];
+    // A function value emits provider markup itself (see resendBroadcastVars).
+    if (typeof raw === 'function') return raw(fallback ?? '', html);
     const value = raw === undefined || raw === null || raw === '' ? (fallback ?? '') : String(raw);
     return html ? escapeHtml(value) : value;
   });
+}
+
+/**
+ * Merge-tag values for a Resend Broadcast: one HTML body goes to the whole
+ * segment, and Resend fills in each contact's details with its own
+ * triple-brace placeholders. Unsubscribes go through Resend's hosted link.
+ */
+export const RESEND_UNSUBSCRIBE_URL = '{{{RESEND_UNSUBSCRIBE_URL}}}';
+
+export function resendBroadcastVars(settings = {}) {
+  // Resend's placeholder syntax ends at "}}}", so keep fallbacks free of braces.
+  const placeholder = (name) => (fallback, html = true) => {
+    const clean = String(fallback).replace(/[{}|]/g, '');
+    const fb = html ? escapeHtml(clean) : clean;
+    return fb ? `{{{${name}|${fb}}}}` : `{{{${name}}}}`;
+  };
+  return {
+    first_name: placeholder('FIRST_NAME'),
+    last_name: placeholder('LAST_NAME'),
+    full_name: (fallback, html) => `${placeholder('FIRST_NAME')(fallback, html)} {{{LAST_NAME}}}`,
+    email: placeholder('EMAIL'),
+    unsubscribe_url: () => RESEND_UNSUBSCRIBE_URL,
+    company_name: settings.company_name || '',
+  };
 }
 
 /** Tags used in a template that we don't know how to fill. */
@@ -100,9 +126,13 @@ function preheaderBlock(text) {
  * Build the final email for one recipient: merge tags, preheader, and the
  * mandatory sender-identity + unsubscribe footer (always appended, even if the
  * template already links {{unsubscribe_url}}).
+ *
+ * `vars` replaces the per-contact values, e.g. with resendBroadcastVars().
+ *
+ * @param {{ campaign: any, contact: any, settings?: any, unsubscribeUrl: string, vars?: Record<string, any> }} opts
  */
-export function renderEmail({ campaign, contact, settings = {}, unsubscribeUrl }) {
-  const vars = mergeVars(contact, {
+export function renderEmail({ campaign, contact, settings = {}, unsubscribeUrl, vars: varsOverride }) {
+  const vars = varsOverride ?? mergeVars(contact, {
     unsubscribe_url: unsubscribeUrl,
     company_name: settings.company_name || '',
   });
