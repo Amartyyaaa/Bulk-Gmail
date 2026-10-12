@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import { Spinner } from './components/ui.jsx';
@@ -16,8 +16,19 @@ const Settings = lazy(() => import('./pages/Settings.jsx'));
 const Unsubscribe = lazy(() => import('./pages/Unsubscribe.jsx'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
+const GmailSender = lazy(() => import('./pages/GmailSender.jsx'));
 
 export default function App() {
+  const { pathname } = useLocation();
+  // The Gmail sender is standalone and works without Supabase.
+  if (pathname === '/gmail') {
+    return (
+      <Suspense fallback={<Spinner />}>
+        <GmailSender />
+      </Suspense>
+    );
+  }
+
   if (!isConfigured) {
     return (
       <div className="center-screen">
