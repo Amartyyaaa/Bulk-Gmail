@@ -89,6 +89,16 @@ Notes:
 - Resend's plan limits on contacts apply. Delivery, bounce and complaint events still show here; Resend's dashboard has the full Broadcast report.
 - Sending through Broadcasts doesn't change inbox placement by itself: Gmail sorts mail the same way whichever Resend API was used.
 
+## Gmail sender (`/gmail`)
+
+A simple, standalone page that sends plain-text mail from **your own Gmail account**. It needs no login and no Supabase.
+
+1. Turn on 2-Step Verification for the Google account, then create an App Password at <https://myaccount.google.com/apppasswords>.
+2. Open `/gmail`, then fill in sender name, Gmail address, the 16-character App Password, subject, body and recipients (one per line).
+3. Press **Send all**. Each recipient gets their own email, so nobody sees the other addresses. The page sends in chunks of 10 through `api/send-gmail.js` (a Vercel Function using Gmail SMTP) and shows progress and any failures.
+
+Nothing is stored: the App Password is only sent with each request. Gmail caps personal accounts at about 500 recipients a day. Locally, run `vercel dev` (not `npm run dev`) so the `/api` function is served.
+
 ## Throttling guidance
 
 - `ESP_MAX_PER_SECOND` must stay within the provider's rate limit: Resend defaults to 2/s, and SES uses your account's max send rate.
